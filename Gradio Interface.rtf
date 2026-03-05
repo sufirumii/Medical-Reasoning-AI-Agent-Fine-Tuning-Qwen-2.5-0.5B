@@ -1,0 +1,106 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2868
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 import gradio as gr\
+import torch\
+from unsloth import FastLanguageModel\
+\
+# --- 1. SETTINGS & LOADING ---\
+model_path = "/kaggle/working/medical_qwen_model"\
+max_seq_length = 2048\
+dtype = None # None for auto detection\
+load_in_4bit = True # Keeps inference fast\
+\
+print("\uc0\u55358 \u56954  Loading your Medical Agent... Please wait.")\
+model, tokenizer = FastLanguageModel.from_pretrained(\
+    model_name = model_path,\
+    max_seq_length = max_seq_length,\
+    dtype = dtype,\
+    load_in_4bit = load_in_4bit,\
+)\
+FastLanguageModel.for_inference(model) # Enable 2x faster inference\
+\
+# --- 2. THE LOGIC ---\
+def medical_reasoning_agent(question):\
+    if not question.strip():\
+        return "Please enter a medical query."\
+    \
+    # Format the prompt exactly like the training data\
+    messages = [\
+        \{"role": "user", "content": question\},\
+    ]\
+    inputs = tokenizer.apply_chat_template(\
+        messages,\
+        add_generation_prompt=True,\
+        return_tensors="pt",\
+    ).to("cuda")\
+\
+    # Generate with a focus on reasoning (slightly higher temperature for "thinking")\
+    outputs = model.generate(\
+        input_ids=inputs, \
+        max_new_tokens=1024,\
+        use_cache=True,\
+        temperature=0.7,\
+        top_p=0.9\
+    )\
+    \
+    response = tokenizer.batch_decode(outputs)[0]\
+    \
+    # Clean up the output to remove the prompt markers\
+    final_output = response.split("<|im_start|>assistant")[-1].replace("<|im_end|>", "").strip()\
+    return final_output\
+\
+# --- 3. THE INTERFACE (Simplified & Large Text) ---\
+with gr.Blocks(theme=gr.themes.Soft()) as demo:\
+    # Header Section\
+    gr.Markdown(\
+        """\
+        # <center>\uc0\u55356 \u57317  MEDICAL AI AGENT v1.0</center>\
+        ## <center>Fine-tuned Qwen-2.5-0.5B on OpenMed Reasoning Dataset</center>\
+        ### <center>Training Set: 124,520 Rows | Logic: Chain-of-Thought (CoT)</center>\
+        ---\
+        """\
+    )\
+    \
+    with gr.Row():\
+        with gr.Column(scale=1):\
+            # Large Input Box\
+            input_box = gr.Textbox(\
+                label="MEDICAL INQUIRY", \
+                placeholder="Describe symptoms, drug interactions, or clinical questions...", \
+                lines=5,\
+                elem_id="large_input"\
+            )\
+            send_btn = gr.Button("\uc0\u55357 \u56960  GENERATE CLINICAL REASONING", variant="primary", size="lg")\
+            clear_btn = gr.Button("\uc0\u55357 \u56785 \u65039  CLEAR", size="sm")\
+\
+    with gr.Row():\
+        with gr.Column(scale=1):\
+            # Large Output Box\
+            output_box = gr.Textbox(\
+                label="AGENT RESPONSE & REASONING", \
+                lines=15, \
+                interactive=False,\
+                elem_id="large_output"\
+            )\
+\
+    # Custom CSS for Large Text & Simplicity\
+    demo.css = """\
+    #large_input textarea \{ font-size: 1.2rem !important; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; \}\
+    #large_output textarea \{ font-size: 1.15rem !important; background-color: #f9f9f9; color: #2c3e50; \}\
+    h1 \{ color: #2e86c1; margin-bottom: 0px; \}\
+    h2 \{ color: #5dade2; margin-top: 5px; font-weight: 300; \}\
+    h3 \{ color: #7f8c8d; font-size: 0.9rem; \}\
+    """\
+\
+    # Button Actions\
+    send_btn.click(fn=medical_reasoning_agent, inputs=input_box, outputs=output_box)\
+    clear_btn.click(lambda: None, None, input_box, queue=False)\
+    clear_btn.click(lambda: None, None, output_box, queue=False)\
+\
+# Launch with a public link if on Kaggle\
+demo.launch(share=True)}
